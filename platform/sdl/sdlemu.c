@@ -272,8 +272,6 @@ void sdl_start_sound(int rate, int bits, int stereo)
 	SDL_AudioSpec as_desired, as_obtained;
 	int target_fps = Pico.m.pal ? 50 : 60;
 
-	// if no settings change, we don't need to do anything
-	if (rate == s_oldrate && s_oldbits == bits && s_oldstereo == stereo) return;
 	if(s_initialized) sdl_stop_sound();
 
 	as_desired.freq = rate;

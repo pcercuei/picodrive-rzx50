@@ -29,6 +29,7 @@ void sdl_pd_clone_buffer2(void);
 
 /* sound */
 void sdl_start_sound(int rate, int bits, int stereo);
+void sdl_stop_sound(void);
 void sdl_sound_write(void *buff, int len);
 void sdl_sound_volume(int l, int r);
 
@@ -44,4 +45,3 @@ enum  { GP2X_UP=1<<6,      GP2X_LEFT=1<<5,      GP2X_DOWN=1<<27, GP2X_RIGHT=1<<1
         GP2X_VOL_UP=1<<20, GP2X_VOL_DOWN=1<<21, GP2X_PUSH=1<<29 };        
 
 #endif
- 

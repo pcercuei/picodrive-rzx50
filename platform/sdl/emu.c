@@ -837,6 +837,7 @@ void emu_Loop(void)
 		frames_done++; frames_shown++;
 	}
 
+	sdl_stop_sound();
 	change_fast_forward(0);
 
 	if (PicoMCD & 1) PicoCDBufferFree();
