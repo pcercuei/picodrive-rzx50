@@ -83,10 +83,10 @@ int main(int argc, char *argv[])
 {
 	g_argv = argv;
 
-	emu_ReadConfig(0, 0);
 	sdl_init();
-
 	emu_Init();
+	emu_ReadConfig(0, 0);
+
 	menu_init();
 
 	engineState = PGS_Menu;
