@@ -13,6 +13,8 @@
 #include <stdint.h>
 #include <SDL/SDL.h>
 
+#include <Pico/PicoInt.h>
+
 #include "../common/emu.h"
 
 #include "sdlemu.h"
@@ -239,31 +241,19 @@ void sdl_pd_clone_buffer2(void)
 }
 
 /* sound */
-#define SDL_BUFFER_SIZE 4096
-static SDL_mutex *sound_mutex;
-static SDL_cond *sound_cv;
-static int sdl_sound_buffer[SDL_BUFFER_SIZE];
-static int *sdl_sound_current_pos = NULL;
-static int sdl_sound_current_emulated_samples = 0;
+#define BUFFER_SIZE (2*2*44100/50)
+#define SOUND_BUFFER_COUNT 4
+static char sound_buffer[SOUND_BUFFER_COUNT][BUFFER_SIZE];
+static unsigned int buf_r, buf_w, samples_count;
 
 static int s_oldrate = 0, s_oldbits = 0, s_oldstereo = 0;
 static int s_initialized = 0;
 
 void sdl_sound_callback(void *userdata, Uint8 *stream, int len)
 {
-	SDL_LockMutex(sound_mutex);
-
-	if(sdl_sound_current_emulated_samples < len/4) {
-		memset(stream, 0, len);
-	} else {
-		memcpy(stream, sdl_sound_buffer, len);
-		memmove(sdl_sound_buffer, sdl_sound_buffer + len/4, (sdl_sound_current_pos - sdl_sound_buffer)*4 - len);
-		sdl_sound_current_pos -= len/4;
-		sdl_sound_current_emulated_samples -= len/4;
-	}
-
-	SDL_CondSignal(sound_cv);
-	SDL_UnlockMutex(sound_mutex);
+	memcpy(stream, sound_buffer[buf_r], len);
+	if (++buf_r >= SOUND_BUFFER_COUNT)
+		buf_r = 0;
 }
 
 void sdl_sound_volume(int l, int r)
@@ -272,7 +262,6 @@ void sdl_sound_volume(int l, int r)
 
 void sdl_stop_sound()
 {
-	SDL_DestroyMutex(sound_mutex);
 	SDL_PauseAudio(1);
 	SDL_CloseAudio();
 	s_initialized = 0;
@@ -281,6 +270,7 @@ void sdl_stop_sound()
 void sdl_start_sound(int rate, int bits, int stereo)
 {
 	SDL_AudioSpec as_desired, as_obtained;
+	int target_fps = Pico.m.pal ? 50 : 60;
 
 	// if no settings change, we don't need to do anything
 	if (rate == s_oldrate && s_oldbits == bits && s_oldstereo == stereo) return;
@@ -288,8 +278,13 @@ void sdl_start_sound(int rate, int bits, int stereo)
 
 	as_desired.freq = rate;
 	as_desired.format = AUDIO_S16; // `bits` is always 16
-	as_desired.channels = stereo+1;
-	as_desired.samples = 256;
+	as_desired.channels = stereo + 1;
+
+	as_desired.samples = (rate / target_fps);
+	if (!stereo && as_desired.samples & 1)
+		as_desired.samples--;
+
+	samples_count = as_desired.samples * as_desired.channels * 2;
 	as_desired.callback = sdl_sound_callback;
 
 	if(SDL_OpenAudio(&as_desired, &as_obtained) == -1) {
@@ -297,31 +292,21 @@ void sdl_start_sound(int rate, int bits, int stereo)
 		return;
 	}
 
-	sound_mutex = SDL_CreateMutex();
-	sound_cv = SDL_CreateCond(); 
-
-	memset(sdl_sound_buffer, 0, SDL_BUFFER_SIZE);
-	sdl_sound_current_pos = sdl_sound_buffer;
-	sdl_sound_current_emulated_samples = 0;
-
+	memset(sound_buffer, 0, sizeof(sound_buffer));
 	SDL_PauseAudio(0);
 	s_initialized = 1; s_oldrate = rate; s_oldbits = bits; s_oldstereo = stereo;
 }
 
 void sdl_sound_write(void *buff, int len)
 {
-	int i, *src = (int *)buff;
+	SDL_LockAudio();
 
-	SDL_LockMutex(sound_mutex);
+	memcpy(sound_buffer[buf_w], buff, samples_count);
 
-	for(i = 0; i < (len >> 2); i++) {
-		while(sdl_sound_current_emulated_samples > SDL_BUFFER_SIZE*3/4) SDL_CondWait(sound_cv, sound_mutex);
-		*sdl_sound_current_pos++ = src[i];
-		sdl_sound_current_emulated_samples += 1;
-	}
+	if (buf_w != buf_r && ++buf_w == SOUND_BUFFER_COUNT)
+		buf_w = 0;
 
-	SDL_CondSignal(sound_cv);
-	SDL_UnlockMutex(sound_mutex);
+	SDL_UnlockAudio();
 }
 
 /* joystick emulation */
